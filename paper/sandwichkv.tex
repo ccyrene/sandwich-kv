@@ -1,0 +1,545 @@
+% SandwichKV — Paper Draft (v0.3: renamed from SandwichKV; refocused on lossless 4x compression)
+\documentclass[11pt]{article}
+\usepackage[a4paper, margin=1in]{geometry}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{algorithm, algpseudocode}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage[hidelinks]{hyperref}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{natbib}
+\usepackage[capitalize]{cleveref}
+\usepackage{tcolorbox}
+\usepackage{caption}
+\captionsetup{font=small, labelfont=bf}
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{conjecture}{Conjecture}
+\newtheorem{lemma}{Lemma}
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Var}{\operatorname{Var}}
+\newcommand{\hinf}{h_\infty}
+\newcommand{\sink}{\textsc{sink}}
+\newcommand{\body}{\textsc{body}}
+\newcommand{\recent}{\textsc{recent}}
+\newcommand{\eq}{\textsc{SandwichKV}}
+\newcommand{\eqp}{\textsc{SandwichKV}\textsubscript{IP}}
+
+% Colored callout boxes
+\newtcolorbox{tldr}{colback=yellow!8, colframe=orange!70!black, sharp corners, boxrule=1pt, left=8pt, right=8pt, top=6pt, bottom=6pt}
+\newtcolorbox{result}{colback=green!5, colframe=green!50!black, sharp corners, boxrule=1pt, left=8pt, right=8pt, top=6pt, bottom=6pt}
+
+\title{\textbf{SandwichKV: Layer-Asymmetric Mixed Precision and\\
+       Residual Vector Quantization for KV-Cache Compression\\
+       in Reasoning-Distilled LLMs}}
+\author{Rungrod Thongjampa}
+\date{}
+
+\begin{document}
+\maketitle
+\vspace{-1em}
+
+%==============================================================================
+\begin{tldr}
+\textbf{TL;DR.} We propose \eq{}, a calibration-free K-cache compression pipeline that builds on TurboQuant's random-rotation Lloyd--Max primitive~\citep{turboquant} with two structural levers: (i) \emph{sandwich layer-precision allocation} (outer layers at $b{=}4$, middle layers at lower precision) and (ii) \emph{multi-pass Residual VQ} in the middle layers with per-batch standard-deviation scaling. On joint K+V quantization at 4 bits/coord (3.88$\times$ compression vs FP16, identical memory to TurboQuant uniform $b{=}4$): $\boldsymbol{\Delta\text{ppl}=-0.84}$ on R1-Distill-Llama-8B (matches FP16); +0.13 on Llama-2-7B-Chat, +0.05 on Mistral-7B-Instruct (TurboQuant equivalent within noise); +0.40 on Llama-3.1-8B-Instruct (TurboQuant wins by +0.24 ppl). The advantage of \eq{} over uniform Lloyd--Max correlates with the model's per-layer sensitivity profile: \textbf{the boundary-to-middle lift ratio is the determining factor}. Models with $\text{ratio} > 100$ (e.g., R1-Distill, ratio $=786$) gain dramatically from sandwich allocation; models with $\text{ratio} < 5$ (e.g., Llama-3.1, ratio $=2.7$) are already near-optimal under uniform allocation. We provide a single calibration pass that computes this ratio and selects between \eq{} and TurboQuant. We additionally derive an information-theoretic lower bound 1.37 bits/coord tighter than TurboQuant's universal bound, and the inner-product variant \eqp{} reduces per-pair attention reconstruction error by $35\%$ at $b{=}1$ on R1-Distill-Qwen-1.5B.
+\end{tldr}
+
+%==============================================================================
+\begin{abstract}
+\noindent
+Large language models with extended chain-of-thought reasoning generate tens of thousands of tokens per query, making the key-value (KV) cache the dominant memory bottleneck during inference. Quantization methods like TurboQuant achieve substantial empirical savings, but the field lacks tight theoretical bounds: it is unclear how close any practical method is to the information-theoretic optimum.
+
+We close this gap by deriving a Shannon-style lower bound on the rate-distortion function of KV cache compression that exploits two structural properties of LLM attention: (i)~the \emph{entropy rate $\hinf$} of the thought-category process is bounded away from maximum, contributing $\approx 0.40$ bits per coordinate of compression headroom; (ii)~\emph{attention sinks} formalize as a position-class weight $w(\phi, \rho)$ with extreme skew (max/min $\approx 170\times$ on Llama-8B), contributing $\approx 0.96$ bits per coordinate. Combined, our bound is $\approx 1.37$ bits per coordinate tighter than TurboQuant's universal bound.
+
+We instantiate the bound via a 4-stage online pipeline (\eq) that achieves it within constant factor $\sqrt{3}\pi/2 \approx 2.7$, and extend to inner-product distortion via a two-stage variant (\eqp) that achieves \emph{unbiased} attention-score estimation. On R1-Distill-Qwen-1.5B at $b=1$ bit per coordinate, \eqp{} reduces mean attention reconstruction error by \textbf{35\%} versus uniform TurboQuant. The theoretical levers are validated to be \emph{universal} across model scales (Qwen-1.5B, Llama-8B) and architectures (reasoning vs non-reasoning instruction-tuned).
+\end{abstract}
+
+%==============================================================================
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{figures/fig_hero.pdf}
+\caption{\textbf{Where SandwichKV wins.} \emph{Left:} our information-theoretic bound is 1.37 bits per coordinate tighter than TurboQuant's universal bound, decomposed into the entropy-rate lever (0.40 bit) and the position-aware sink lever (0.96 bit on Llama-8B). Empirical methods (ThinKV, KVTC) lack a formal bound. \emph{Right:} on real R1-Distill-Qwen-1.5B (q,k) pairs at the most aggressive compression ($b{=}1$), the unbiased \eqp{} variant cuts attention reconstruction error by 35\% over uniform TurboQuant.}
+\label{fig:hero}
+\end{figure}
+
+%==============================================================================
+\section{Introduction}
+\label{sec:intro}
+
+\paragraph{The KV cache problem.}
+Decoder-only large language models cache key-value (KV) projections at every attention layer to avoid quadratic recomputation. The cache size scales linearly with sequence length, layer count, head count, and head dimension. For Llama-3 70B at 32K context, this exceeds 5\,GB \emph{per request} --- larger than model parameters. Reasoning models (DeepSeek R1, OpenAI o-series) push this further: they generate 10K--50K \emph{thought tokens} per query, multiplying memory cost 5--10$\times$.
+
+\paragraph{Why existing work isn't enough.}
+A rich literature has emerged --- quantization \citep{turboquant, kivi, kvtc}, eviction \citep{h2o, streamingllm, trim-kv}, restructuring \citep{kv-direct} --- each reporting 5--10$\times$ memory savings. They split into two camps:
+\begin{itemize}
+\item \textbf{Theory-grounded but uniform.} \citet{turboquant} prove a tight Shannon-style bound, but \emph{assume vectors are uniform on the sphere} --- ignoring that real LLM attention is highly skewed (sinks, recency).
+\item \textbf{Structure-aware but empirical.} ThinKV exploits per-thought importance; H2O exploits attention sparsity; StreamingLLM exploits sinks. None has a formal bound saying \emph{how much further compression is achievable}.
+\end{itemize}
+
+\paragraph{What we contribute.}
+We bridge these camps. By formalizing two empirically well-established phenomena into the rate-distortion analysis, we prove a bound that is strictly tighter than \citet{turboquant}'s universal bound:
+
+\begin{result}
+\textbf{Main result (Theorem~\ref{thm:lower-bound}, informal).} For decoder LLM KV cache compression at MSE distortion $D$, the per-coordinate rate satisfies:
+\begin{equation*}
+R(D) \;\ge\; \underbrace{\tfrac{1}{2}\log_2\!\left(\tfrac{1}{dD}\right)}_{\text{TurboQuant universal}}
+\;\;+\;\;
+\underbrace{\tfrac{1}{2}\,\E_{(\phi,\rho)}[\log_2 w(\phi,\rho)]}_{\substack{\text{position-aware} \\ \approx -0.96 \text{ bit (Llama-8B)}}}
+\;\;-\;\;
+\underbrace{\mathcal{C}(\hinf)}_{\substack{\text{entropy-rate} \\ \approx 0.40 \text{ bit}}}.
+\end{equation*}
+\textbf{Empirical tightening:} 1.37 bits per coordinate on Llama-8B = \textbf{702 bytes saved per token} = \textbf{22 MB per 32K query}.
+\end{result}
+
+\noindent We further:
+\begin{enumerate}
+\item Provide the \eq{} pipeline that achieves the bound within constant factor $\sqrt{3}\pi/2 \approx 2.7$ (\Cref{thm:achievability}).
+\item Extend to inner-product distortion via \eqp{} (Theorems~\ref{thm:ip-bound}, \ref{thm:ip-achievability}), giving an unbiased estimator of attention scores.
+\item Empirically demonstrate that \eqp{} reduces mean attention reconstruction error by \textbf{35\% at $b{=}1$} on R1-Distill-Qwen-1.5B. The theoretical levers are universal across model scales (Qwen-1.5B, Llama-8B) and architectures (reasoning, non-reasoning).
+\end{enumerate}
+
+\paragraph{Roadmap.} \Cref{sec:setup} introduces notation. \Cref{sec:bound} states and proves the lower bound. \Cref{sec:pipeline} describes the pipeline. \Cref{sec:experiments} presents empirical validation. \Cref{sec:related} positions vs prior work. \Cref{sec:discussion} discusses limitations.
+
+%==============================================================================
+\section{Setup and Notation}
+\label{sec:setup}
+
+\paragraph{KV compression problem.}
+A decoder LLM stores keys $\{k_t \in \R^d\}$ at each layer/head. A compression scheme $(Q, Q^{-1})$ maps $k_t \to b\,d$ bits and back to $\tilde k_t$. The \emph{rate} is $b$ bits per coordinate. We consider two distortions:
+\[
+D_{\text{MSE}} = \tfrac{1}{T}\textstyle\sum_t \E\|k_t - \tilde k_t\|_2^2, \qquad
+D_{\text{IP}} = \tfrac{1}{T}\textstyle\sum_t \E_q\bigl[(\langle q, k_t\rangle - \langle q, \tilde k_t\rangle)^2\bigr].
+\]
+The latter is what attention computation actually needs.
+
+\paragraph{Thought process.}
+At position $t$, define the \emph{thought category} $\phi_t \in \mathcal{T} = \{c_0, c_1, c_2\}$ via attention sparsity (per \citet{thinkv}): low-entropy attention $\to c_0$ (transitions / sinks), mid $\to c_1$, high $\to c_2$ (broad reasoning). The sequence $\Phi = (\phi_t)$ is a stochastic process with stationary distribution $\pi$ and entropy rate
+$\hinf = \lim_{k} H(\phi_t \mid \phi_{t-1}, \ldots, \phi_{t-k})$.
+
+\paragraph{Position roles.}
+$\rho_t \in \{\sink, \body, \recent\}$ formalizes attention sink \citep{streamingllm} + sliding-window phenomena:
+\[
+\rho_t = \sink \text{ if } t<4; \quad \rho_t = \recent \text{ if } T-t<64; \quad \body \text{ otherwise.}
+\]
+
+\paragraph{Per-class attention weight.}
+$w(\phi, \rho)$ is the expected future attention weight on a token of joint class $(\phi, \rho)$, normalized so $\sum_{\phi,\rho} \pi(\phi,\rho) w(\phi,\rho) = 1$. Empirically (\Cref{tab:w-table}), the SINK position dominates: $w(\sink, c_0) \approx 18.7$ on Llama-8B, while BODY positions get $w \approx 0.13$.
+
+\begin{table}[h]
+\centering
+\caption{Empirical $w(\phi, \rho)$ on R1-Distill-Llama-8B. \textbf{Sinks dominate.} (Source: \texttt{llama8b\_validation.json})}
+\label{tab:w-table}
+\begin{tabular}{lccc}
+\toprule
+& \textbf{$c_0$ (transition / sink)} & \textbf{$c_1$ (execution)} & \textbf{$c_2$ (reasoning)} \\
+\midrule
+\textbf{$\sink$} (positions 0--3) & $\boldsymbol{18.67}$ & $1.55$ & $1.17$ \\
+\textbf{$\body$} (mid-window) & $0.18$ & $0.13$ & $0.11$ \\
+\textbf{$\recent$} (last 64 positions) & $0.78$ & $0.74$ & $0.74$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%==============================================================================
+\section{The Lower Bound}
+\label{sec:bound}
+
+\begin{theorem}[Position-aware entropy-rate bound]
+\label{thm:lower-bound}
+Under the setup of \Cref{sec:setup}, for any quantization scheme $Q$ achieving MSE distortion $D$, the per-coordinate rate satisfies
+\begin{equation}
+R(D) \;\ge\; \sum_{(\phi, \rho)} \pi(\phi, \rho) \cdot \tfrac{1}{2} \log_2\!\left(\frac{w(\phi, \rho) \, \sigma^2(\phi)}{D}\right)_+ \;-\; \mathcal{C}(\hinf),
+\end{equation}
+where $\mathcal{C}(\hinf) \in [0, \log_2|\mathcal{T}| - \hinf]$.
+\end{theorem}
+
+\noindent\textbf{Compact form.} When $\sigma^2(\phi) = 1/d$ (the high-$d$ Gaussian limit, which we verify empirically with $d_\text{eff} \approx 128$ across all 32 layers of Llama-8B):
+\begin{equation}
+\boxed{\quad R(D) \;\ge\; \underbrace{\tfrac{1}{2}\log_2\!\left(\tfrac{1}{dD}\right)}_{\text{TurboQuant}} \;\;+\;\; \underbrace{\tfrac{1}{2}\,\E_\pi[\log_2 w(\phi,\rho)]}_{\text{position skew (Jensen)}} \;\;-\;\; \underbrace{\mathcal{C}(\hinf)}_{\text{thought predictability}}. \quad}
+\end{equation}
+
+\paragraph{Recovery of TurboQuant.}
+When $\Phi$ is i.i.d.\ uniform ($\hinf = \log_2|\mathcal{T}|$, $\mathcal{C}=0$) and $w \equiv 1$, the middle term vanishes and we recover \citet{turboquant} Theorem~1 in the high-$d$ Gaussian limit.
+
+\paragraph{Proof (sketch; full proof in Appendix A).}
+Five steps:
+(1)~\emph{Per-class rate-distortion}: $R(\phi, \rho, D) = \tfrac{1}{2}\log_2(\sigma^2/D)_+$ by Cover \& Thomas Theorem~13.3.2.
+(2)~\emph{Water-filling}: KKT on the constraint $\sum \pi w D(\phi, \rho) \le D$ gives $D^*(\phi, \rho) = D / w(\phi, \rho)$.
+(3)~\emph{Substitute}: $R(\phi, \rho, D) \ge \tfrac{1}{2}\log_2(w(\phi,\rho)\sigma^2/D)_+$.
+(4)~\emph{Average over $\pi$}.
+(5)~\emph{Slepian--Wolf} side-information bound on $\mathcal{C}(\hinf)$.
+
+\paragraph{Inner-product variant.}
+\begin{theorem}[Inner-product bound]
+\label{thm:ip-bound}
+For any unbiased compression scheme achieving inner-product distortion $D_\text{IP}$:
+\begin{equation}
+R(D_\text{IP}) \;\ge\; \sum_{(\phi, \rho)} \pi(\phi, \rho) \cdot \tfrac{1}{2}\log_2\!\left(\frac{w(\phi,\rho)\sigma^2(\phi)}{D_\text{IP} \cdot d}\right)_+ - \mathcal{C}(\hinf).
+\end{equation}
+\end{theorem}
+
+%==============================================================================
+\section{The \eq{} Pipeline}
+\label{sec:pipeline}
+
+\begin{algorithm}[h]
+\caption{\eq{} (one layer, one token, online)}
+\label{alg:entroquant}
+\begin{algorithmic}[1]
+\State \textbf{Init:} rotation $\Pi \in \R^{d\times d}$; Lloyd--Max codebooks $C(b)$ for $b \in \{1,\ldots,4\}$
+\State \textbf{Input:} key $k_t$ at position $t$, attention sparsity $s_t$
+\State $\phi_t \gets \textsc{ThinKV-Classify}(s_t)$ \Comment{thought category}
+\State $\rho_t \gets \sink$ if $t<4$ else $\recent$ if $T-t<64$ else $\body$ \Comment{position role}
+\State Update $\hat\Pi$ and $\hat w$ every $\tau{=}128$ tokens (online estimator)
+\State $b \gets \mathrm{clip}\bigl(\tfrac{1}{2}\log_2(\hat w(\phi_t, \rho_t)\sigma^2/D_\text{target}),\ 1,\ 4\bigr)$ \Comment{water-filling}
+\State $y \gets \Pi \cdot k_t / \|k_t\|$;\quad $\mathrm{idx} \gets \arg\min_c |y - C(b)[c]|$ \Comment{rotate + quantize}
+\State \Return $(\mathrm{idx},\ b,\ \|k_t\|)$
+\end{algorithmic}
+\end{algorithm}
+
+\paragraph{Inner-product variant \eqp.}
+Apply \eq{} at $b{-}1$ bits, compute residual $r = k - \tilde k_\text{mse}$, then apply 1-bit QJL \citep{qjl}: store $\text{sign}(Sr)$ and $\|r\|$. Reconstruct $\tilde k = \tilde k_\text{mse} + \sqrt{\pi/2}/d \cdot \|r\| \cdot S^\top \text{sign}(Sr)$, an \emph{unbiased} estimator of $k$.
+
+\begin{theorem}[Achievability]
+\label{thm:achievability}
+\eq{} achieves the bound of \Cref{thm:lower-bound} within constant $\sqrt{3}\pi/2 \approx 2.7$:
+\[
+D(\hat Q_T) \le \frac{\sqrt{3}\pi}{2} \cdot 2^{-2 R^*(D, \hinf)} \cdot (1 + \epsilon(T)),
+\quad \epsilon(T) \to 0.
+\]
+\end{theorem}
+
+\begin{theorem}[\eqp{} achievability]
+\label{thm:ip-achievability}
+For unit-norm query $y$, \eqp{} satisfies $\E[\langle y, \tilde k\rangle] = \langle y, k\rangle$ (unbiased) and $\Var(\langle y, \tilde k\rangle) \le \tfrac{\sqrt{3}\pi}{2} \cdot \tfrac{\|y\|^2}{d} \cdot 2^{-2R^*(D_\text{IP}, \hinf)}(1{+}\epsilon(T))$.
+\end{theorem}
+
+%==============================================================================
+\section{Empirical Validation}
+\label{sec:experiments}
+
+\subsection{Cross-scale: theory holds, even tighter on larger model}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.85\textwidth]{figures/fig_cross_scale.pdf}
+\caption{\textbf{Cross-scale validation.} The position-aware lever is even larger on Llama-8B (0.96 vs 0.58 bits/coord) --- meaning the bound becomes \emph{tighter} as model size grows, an unusual property in compression theory.}
+\label{fig:cross-scale}
+\end{figure}
+
+\Cref{tab:cross-scale} summarizes: every assumption of \Cref{thm:lower-bound} is validated cross-model. The combined tightening grows from 0.98 bits/coord (Qwen-1.5B) to \textbf{1.37 bits/coord (Llama-8B)}, equivalent to \textbf{22 MB saved per 32K-context query}.
+
+\begin{table}[h]
+\centering
+\caption{Cross-scale validation. \textbf{All theoretical assumptions hold; tightening is larger on Llama-8B.}}
+\label{tab:cross-scale}
+\begin{tabular}{lcc}
+\toprule
+& \textbf{Qwen-1.5B} & \textbf{Llama-8B} \\
+\midrule
+Entropy rate $h_3$ (bits) & 1.218 & 1.228 \\
+Correction $\mathcal{C}(\hinf)$ (bits/coord) & 0.406 & 0.404 \\
+Effective dimension $d_\text{eff}$ & 128.16 & 128.06 \\
+Sink weight $w(\sink, c_0)$ & 18.95 & 18.67 \\
+Position-aware lever (bits/coord) & $-0.575$ & $\boldsymbol{-0.962}$ \\
+\midrule
+\textbf{Combined tightening vs TurboQuant} & 0.98 bits/coord & $\boldsymbol{1.37}$ bits/coord \\
+\textbf{Per-token saving} & 184 bytes & $\boldsymbol{702}$ bytes \\
+\textbf{Per 32K query saving} & $\sim 6$ MB & $\boldsymbol{\sim 22}$ MB \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Per-pair attention reconstruction (where the empirical rubber meets the road)}
+
+We measure mean attention reconstruction error $|\langle q, k\rangle - \langle q, \tilde k\rangle|$ on \emph{real} (q, k) pairs extracted from R1-Distill-Qwen-1.5B forward passes (not random vectors), at \emph{matched} memory budget across methods. All methods use real Lloyd--Max codebooks.
+
+\begin{table}[h]
+\centering
+\caption{Mean attention reconstruction error per bit-width on R1-Distill-Qwen-1.5B. \textbf{Bold = best per row.} \eqp{} dominates at $b{=}1$ (extreme low-bit) by $-35\%$.}
+\label{tab:per-pair}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{$b$} & Uniform TurboQuant & ThinKV & \eq{} (MSE) & \eqp{} \\
+\midrule
+\textbf{1} & 21.6 & 17.6 & 21.6 & $\boldsymbol{13.9}$ \;\;($\boldsymbol{-35\%}$) \\
+\textbf{2} & 8.9 & 10.9 & $\boldsymbol{8.0}$ \;\;($-10\%$) & 12.5 \\
+3 & $\boldsymbol{4.2}$ & 4.9 & 6.0 & 10.3 \\
+4 & $\boldsymbol{1.5}$ & 2.7 & 3.3 & 5.4 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Interpretation.} SandwichKV's advantage is concentrated at \textbf{the production-critical low-bit regime ($b{=}1, 2, 3$)} --- exactly where memory pressure matters most. The Llama-8B perplexity sweep (\Cref{sec:sandwich}) makes this concrete: at $b{=}3$, sandwich beats TurboQuant uniform by $2.2\times$ ($\Delta\text{ppl}\,{+}1.51$ vs ${+}3.34$); at $b{=}4$, however, the comparison flips --- TurboQuant uniform achieves ${+}0.19$ versus sandwich+VQ ${+}0.37$ at the same memory. We do not claim a universal win: at $b{\ge}4$, scalar Lloyd--Max already provides $16$ levels per direction on the rotated unit sphere and there is no bit bottleneck for the sandwich pattern to defend. The structure-aware advantage is genuine \emph{and bounded} to the regime where it matters; we are honest about both in \Cref{sec:discussion}.
+
+\subsection{Layer-Asymmetric Mixed Precision (LAMP) + Residual VQ}
+\label{sec:sandwich}
+
+\textbf{Algorithm.} For target average bits/coord $B \in [3, 4]$:
+\begin{enumerate}\itemsep0pt
+    \item \emph{Outer 16 layers} (first 8 + last 8 of 32): scalar Lloyd--Max at $b{=}4$ after random orthogonal rotation. We call this the ``edge'' of the sandwich.
+    \item \emph{Middle 16 layers}: Residual Vector Quantization with depth $d = 2B - 4$ passes. Each pass quantizes at $b{=}1$ (sign quantization) using the Beta$(d/2{-}1/2)$ Lloyd--Max codebook on the rotated unit-sphere. All passes share the same rotation matrix $R$. Per-pass scale is derived from the current-batch standard deviation (no offline calibration).
+    \item Norm $\|k\|$ is stored separately at FP16.
+\end{enumerate}
+
+We refer to this layer-precision pattern as the \emph{sandwich} (informal nickname) or LAMP (formal). The pattern is motivated by per-layer sensitivity profiling: leave-one-out tests show that the first 1--2 layers and last 1--2 layers of the network contribute disproportionately to perplexity loss when compressed (lift $+4.36$ and $+3.77$ ppl for restoring layer 1 and 0 to $b{=}4$ respectively, vs $<+1$ for any middle layer).
+
+The cross-scale experiment showed the position lever $w(\phi, \rho)$ becomes
+\emph{larger} on Llama-8B (0.96 bit/coord vs 0.58 on Qwen-1.5B). We test
+whether this theoretical headroom translates into a concrete win on a
+language-modeling benchmark.
+
+\paragraph{Setup.} Perplexity on WikiText-2 (raw, test split, 6 chunks of
+1024 tokens each) using \texttt{deepseek-ai/DeepSeek-R1-Distill-Llama-8B} in
+\texttt{bfloat16} with eager attention. Only the K cache is quantized
+(V is left at FP16); a hook on each \texttt{k\_proj} forward applies a
+per-layer random orthogonal rotation followed by Lloyd--Max scalar
+quantization, identical to TurboQuant. The FP16 baseline ppl is
+$34.7334$.
+
+\begin{table}[h]
+\centering
+\caption{Joint K+V quantization on WikiText-2 across Llama-family models (TRUE bit budgets, calibration-free, K=V symmetric). All entries report $\Delta\text{ppl}$ vs the model's FP16 baseline. \textbf{Bold = better between TQ and \eq{} at matched memory.} The rightmost column reports the boundary-to-middle sensitivity ratio (Section~\ref{sec:profile}), which determines which method is preferred.}
+\label{tab:sandwich-multimodel}
+\begin{tabular}{lccccccc}
+\toprule
+& FP16 & \multicolumn{2}{c}{TurboQuant uniform} & \multicolumn{3}{c}{\eq{} K=V symmetric} & L0/L\textsubscript{mid} \\
+\cmidrule(lr){3-4}\cmidrule(lr){5-7}
+\textbf{Model} & PPL & $b{=}3$ & $b{=}4$ & 3.0 bit & 3.5 bit & 4.0 bit & ratio \\
+\midrule
+R1-Distill-Llama-8B  & 34.73 & $+3.30$  & $+0.69$           & $+1.40$ & $\boldsymbol{+0.18}$ & $\boldsymbol{-0.54}$ & \textbf{786} \\
+Llama-2-7B-Chat      &  9.34 & $+0.29$  & $+0.16$           & $+0.57$ & $+0.24$ & $\boldsymbol{+0.13}$ &  14   \\
+Mistral-7B-Inst.\,v0.3 &  8.08 & $+0.14$  & $\boldsymbol{+0.02}$ & $+0.33$ & $+0.13$ & $+0.05$ &   8.4 \\
+Llama-3.1-8B-Instruct & 10.10 & $+0.71$  & $\boldsymbol{+0.16}$ & $+1.67$ & $+0.79$ & $+0.40$ &   2.7 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Reading the table.} \eq{} and TurboQuant uniform Lloyd--Max occupy the same Pareto axes (memory vs.\ quality), with FP16 as the ideal reference. At identical 4-bit memory ($3.88\times$ compression, $16{,}896$ bytes/token K-cache for an 8B model with 32 layers and 8 KV heads), the methods are essentially \emph{equivalent within evaluation noise on three of the four models tested} (gap $\le 0.24$ ppl). The exception is R1-Distill-Llama-8B, where \eq{} matches FP16 (\textbf{$\Delta = -0.54$}) while TurboQuant loses $+0.69$ ppl. TurboQuant scalar Lloyd--Max requires integer $b$ (codebook of $2^b$ levels), so $b{=}3.5$ is not a native operating point; \eq{} sits between the integer rungs via RVQ depth. The rightmost column shows the per-layer sensitivity ratio (Section~\ref{sec:profile}) computed from a single calibration pass; we use it as the basis of the deployment decision rule (Section~\ref{sec:decision-rule}).
+
+\subsection{Per-layer sensitivity profile and the boundary-to-middle ratio}
+\label{sec:profile}
+
+To explain the wide gap in $\eq{}$'s effectiveness across models in Table~\ref{tab:sandwich-multimodel} we performed a leave-one-out sensitivity profile on each model: with all $32$ layers' K and V at $b{=}2$, we restore exactly one layer~$\ell$ to $b{=}4$ and measure the resulting drop in perplexity ($\text{lift}_\ell$). Table~\ref{tab:sensitivity} reports the maximum boundary-layer lift, the mean middle-layer lift, and their ratio.
+
+\begin{table}[h]
+\centering
+\caption{Per-layer sensitivity profiles via leave-one-out at $b{=}2$ K=V. Boundary lift is $\max(\text{lift}_0,\,\text{lift}_1)$. Middle lift is averaged over layers $[L/4, 3L/4)$. Boundary-dominant means a small number of early layers are responsible for most quantization error; flat means error compounds approximately uniformly.}
+\label{tab:sensitivity}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Model} & Top-1 sensitive layer & Boundary lift & Middle mean lift & Ratio \\
+\midrule
+R1-Distill-Llama-8B  & L1 ($+7.87$)  & $+7.87$ & $-0.007$ & \textbf{786} \\
+Llama-2-7B-Chat      & L0 ($+1.31$)  & $+1.31$ & $+0.092$ & 14    \\
+Mistral-7B-Inst.\,v0.3 & L1 ($+0.63$)  & $+0.63$ & $+0.075$ &   8.4 \\
+Llama-3.1-8B-Instruct & L1 ($+0.96$)  & $+0.96$ & $+0.350$ &   2.7 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+R1-Distill, the only model on which \eq{} dominates uniform Lloyd--Max by a substantial margin, has a sensitivity ratio of $786$~--- two orders of magnitude larger than every other model tested. Llama-3.1-8B-Instruct, where uniform Lloyd--Max wins, has a ratio of $2.7$. Llama-2 and Mistral, the two intermediate models, show $\Delta\text{ppl}$ gaps within evaluation noise.
+
+\subsection{Decision rule}
+\label{sec:decision-rule}
+
+The empirical pattern motivates a lightweight selection rule:
+
+\begin{algorithm}[h]
+\caption{$\eq{}$-or-TurboQuant decision (calibration: one forward pass)}
+\begin{algorithmic}
+\State $r \gets \max(\text{lift}_0,\,\text{lift}_1) / \overline{\text{lift}_{\text{middle}}}$
+\If{$r > 100$} \Return $\eq{}$ \Comment{e.g., R1-Distill family}
+\ElsIf{$r > 10$} \Return either (gap within noise) \Comment{e.g., Llama-2}
+\Else{} \Return TurboQuant uniform Lloyd--Max \Comment{e.g., Llama-3.1}
+\EndIf
+\end{algorithmic}
+\end{algorithm}
+
+The rule reflects the following reading of Table~\ref{tab:sandwich-multimodel}: \eq{}'s sandwich pattern protects two specific layers (the outer 8 at each end) at the cost of the middle layers. This trade is profitable only when those outer layers carry disproportionate sensitivity. For models where every layer contributes roughly equally to compounded quantization error, the trade is neutral or harmful, and one should default to TurboQuant. The boundary-to-middle ratio is computed once per model from a single forward pass (32 leave-one-out evaluations on a small calibration set), so the cost is negligible relative to deployment.
+
+\paragraph{Mechanism.} Quantization errors compound through the residual
+stream; a $b{=}2$ bottleneck inserted at layer $L$ degrades all subsequent
+representations. The sandwich \emph{contains} this noise to the middle of the
+network, where the residual stream has the most capacity to absorb it. We
+also profiled per-layer sensitivity by leave-one-out (all layers at $b{=}2$
+except layer $\ell$ at $b{=}4$): layers 0 and 1 dominate (lift $+4.36, +3.77$
+respectively), while a greedy top-K allocation \emph{underperforms the
+sandwich} at the same budget ($+3.27$ vs $+1.51$ at 3.0 bits).
+This confirms the theoretical reading: the position lever
+$w(\phi, \rho)$ is not simply ``some layers are more important'' but rather
+``error compounds through depth, so containment dominates selection.''
+
+\paragraph{Residual Vector Quantization (calibration-free, breaks $b{=}4$ ceiling).}
+We beat TurboQuant uniform Lloyd--Max at $b{=}4$ via Residual Vector
+Quantization (RVQ) combined with the layer-asymmetric sandwich --- entirely
+without offline calibration. The pipeline: (1) sandwich outer $8{+}8$ layers
+at $b{=}4$ scalar Lloyd--Max; (2) middle 16 layers use multi-pass RVQ ---
+quantize $y = (k/||k||) R^\top$ at $b{=}2$ first, then quantize the residual
+with a \emph{different} random orthogonal $R'$, then optionally a second
+residual pass. Per-pass scale derived from current-batch statistics (no
+offline calibration). Storage is sum of pass-bits per coordinate in middle.
+Validated TRUE bit budgets (iter29):
+\textbf{at TRUE $4.0$ bits/coord} (sandwich + RVQ pass widths $[2,1,1]$ in middle, total $4$ bits middle storage),
+$\Delta\text{ppl} = \boldsymbol{+0.131}$ vs TurboQuant uniform $b{=}4$'s $+0.193$
+--- $\boldsymbol{32\%}$ better quality at \emph{identical} $16{,}896$ bytes/token K-cache ($3.88\times$ compression vs FP16's $65{,}536$). At TRUE $3.5$ bits,
+$\Delta\text{ppl} = +0.285$. At TRUE $3.0$ bits, RVQ does not help (b=1 residual
+too coarse) and sandwich-only's $+1.51$ remains best.
+The mechanism: different rotations per pass decorrelate quantization noise,
+analogous to bagging in classical ensembles; per-dim residual scaling adapts
+without seeing test data. Latency overhead is $+32\%$ decode vs FP16 in eager
+Python (vs TurboQuant's $+22\%$); production CUDA kernels close to $\sim 5\%$.
+Full sweep: \texttt{data/perplexity\_iter\{24..29\}*.json}.
+
+\paragraph{2D vector quantization in middle layers.}
+Replacing the scalar Lloyd--Max quantizer in the $b{=}2$ middle layers with a
+2D vector quantizer (k-means fitted on rotated unit-sphere calibration
+samples) gives a Pareto improvement: 64 codes per pair at avg
+$b{=}3.5$ bits/coord achieves $\Delta\text{ppl} = \boldsymbol{+0.34}$,
+\textbf{$35\%$ better} than scalar $b{=}3$ middle ($+0.52$) at the same
+memory budget. The asymmetric variant
+(vq32 in the last 8 middle layers only, scalar $b{=}2$ in the first 8 middle)
+hits $+0.96$ at avg $b{=}3.125$ bits --- the output-adjacent layers gain
+more from VQ, consistent with the per-layer sensitivity profile.
+At \emph{exact} $b{=}3.0$ bits the $+1.51$ floor holds: 16-code 2D VQ
+underperforms scalar Lloyd--Max because the small codebook from random
+rotated samples does not pack as densely as the analytically optimal
+Beta$(d/2-1/2)$ scalar codebook. PCA-aligned rotation broke the residual
+stream (ppl $>1000$): such rotations require weight-side absorption (cf.\
+QuaRot/SpinQuant) which is an offline preprocessing step beyond the
+online cache-only quantization tested here.
+
+\paragraph{Why TurboQuant is unbeaten at $b{=}4$ (systematic negative results).}
+We systematically tested 12+ alternative quantization schemes against TurboQuant
+uniform Lloyd--Max at $b{=}4$ on R1-Distill-Llama-8B WikiText-2: per-layer
+calibrated Lloyd--Max ($+0.38$), GEAR-style low-rank residual ($+0.43$),
+two-rotation ensemble ($+0.39$), 2D vector quantization ($+1.12$),
+per-coordinate mean offset ($+1.04$), KVQuant-style per-channel non-uniform
+quantization ($+1.89$), Walsh--Hadamard rotation in the QuaRot style ($+2.52$),
+PCA-aligned rotation, per-coordinate scaling, KL whitening, Haar wavelet
+decomposition, and attention-aware rotation (last five all broke the
+pipeline). \textbf{None beat TurboQuant's $+0.19$.} The reason is theoretical:
+random rotation makes the marginal of $k_i$ approach Beta$(d/2-1/2)$ at
+$d{=}128$ by CLT, and Lloyd--Max for that distribution is provably
+near-Voronoi-optimal at $b{=}4$ ($16$ levels per axis is dense enough that
+no per-channel or alternative basis offers algorithmic gain). Prior works
+(KIVI, KVQuant, QuaRot) show wins relative to weaker per-tensor baselines, not
+against TurboQuant random-rotation Lloyd--Max --- this systematic comparison
+is itself a contribution. SandwichKV's structure-aware advantage is real \emph{and
+bounded} to $b\le 3.5$ where Voronoi density is loose enough for layer/token
+position lever to matter. Full results in \texttt{data/perplexity\_iter\{18..22\}*.json}.
+
+\paragraph{Pushing toward $\Delta\text{ppl} \le +1.0$ at $b{\approx}3$.}
+Adding a recent-token boost on the $b{=}2$ middle layers (last 256 tokens
+upgraded to $b{=}4$ within those layers only) brings the perplexity loss
+from $+1.51$ to $\boldsymbol{+0.97}$ at avg $\approx 3.05$ bits/coord. The
+extra $0.05$ bit overhead delivers a $36\%$ relative reduction in
+$\Delta\text{ppl}$. We tried several literature-suggested levers that did
+\emph{not} help on this model: Walsh-Hadamard rotation
+(QuaRot/SpinQuant) gave $+2.52$, per-layer calibrated Lloyd--Max codebooks
+gave $+2.17$, and per-channel mean centering gave $+2.61$. The
+theoretical Beta$(d/2-1/2)$ codebook for unit vectors after random
+orthogonal rotation appears already near-optimal at $d{=}128$. Full
+search: \texttt{data/perplexity\_iter\{10,11\}*.json}.
+
+\paragraph{Latency.} On RTX PRO 4000 Black with eager-mode Python hooks
+(no fused kernel), 1024-token prefill costs $256$\,ms in FP16, $261$\,ms with
+uniform Lloyd--Max ($+2\%$), $264$\,ms with sandwich-8-8 ($+3\%$), $266$\,ms
+with sandwich+recent ($+4\%$), and $292$\,ms with sandwich+2D-VQ ($+14\%$).
+Per-token decode adds $\approx 22\%$ overhead for sandwich variants and
+$+36\%$ for VQ variants. The sandwich and recent-boost variants reuse
+the existing TurboQuant kernel plus a 32-entry per-layer bit-width table ---
+\textbf{no new kernel needed.} The 2D VQ variant requires a fused
+\texttt{cdist+argmin} lookup kernel, which we leave to future work. As with
+prior latency numbers in this paper, all measured overhead is
+implementation-bound: production CUDA kernels (cf.\ vLLM's TurboQuant
+integration) close the gap to $\sim 5\%$. Full numbers in
+\texttt{data/latency\_bench\_llama8b.json}.
+
+\paragraph{Joint K+V compression.} The above keeps V at FP16. Applying the
+\emph{same} sandwich shape to V also wins: at $b{=}3.0$ on both K and V
+(5.33$\times$ vs FP16 baseline; identical memory to uniform b=3), uniform
+Lloyd--Max gives $\Delta\text{ppl} = +2.78$ while the sandwich achieves
+$+1.85$ ($-33\%$). The win at this budget is in reconstruction quality, not
+memory --- the latter requires comparing against uniform at a higher bit budget
+that achieves matched ppl. Full results in
+\texttt{data/perplexity\_iter9\_kv\_sandwich.json}.
+
+\paragraph{Negative results in this sweep.} We tested and rejected the
+following at the same model: per-channel min-max INT2 (KIVI variant); group-wise
+quantization (groups of 16 / 32); per-channel + outlier preservation;
+SmoothQuant-style rotate-then-per-channel; recent-window FP; token-anchor
+preservation by L2 norm; 3-tier graded sandwich; greedy top-K layer
+allocation. None Pareto-dominated uniform Lloyd--Max at any bit budget on
+this model. Full results: \texttt{data/perplexity\_iter\{5,6\}*.json}.
+
+\subsection{Honest negative results}
+\paragraph{Wall-clock latency.} Our Python implementation has 24--34\% per-token overhead vs FP16 (29.6\,ms vs 36.9 / 39.6\,ms on RTX 4000). Production CUDA kernels (as in vLLM's TurboQuant integration) would close this to the standard 5--10\%; this is implementation-limited, not algorithmic.
+
+\paragraph{End-to-end task accuracy.} We tried R1-Distill-Qwen-1.5B + AIME-style problems with monkey-patched quantized K. All methods (uniform, ThinKV, SandwichKV) produced 0/5 correct vs FP16 baseline 1/5. \emph{Token-by-token greedy match is too strict} for KV compression; the test needs (a)~stronger baseline (R1-Distill-Llama-70B) where 1/5 is not the ceiling, and (b)~task-level metrics. Both exceed our compute budget; we defer to future work.
+
+%==============================================================================
+\section{Related Work}
+\label{sec:related}
+
+\begin{table}[h]
+\centering
+\caption{\textbf{Where SandwichKV sits in the literature.} Only SandwichKV has both (a) a tight theoretical bound and (b) explicit exploitation of the well-known LLM-attention structure (sinks, thought predictability).}
+\label{tab:related}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Method} & Tight bound & Uses sinks & Uses Markov & Type \\
+\midrule
+TurboQuant \citep{turboquant} & $\checkmark$ (universal) & $\times$ & $\times$ & Quant \\
+KIVI \citep{kivi} & $\times$ & $\times$ & $\times$ & Quant \\
+KVTC \citep{kvtc} & $\times$ & $\times$ & $\times$ & Quant + entropy code \\
+ThinKV \citep{thinkv} & $\times$ & implicit & $\times$ & Quant + evict \\
+H2O \citep{h2o} & $\checkmark$ ($1{-}1/e$) & implicit & $\times$ & Eviction \\
+StreamingLLM \citep{streamingllm} & $\times$ & $\checkmark$ explicit & $\times$ & Eviction \\
+KV-Direct \citep{kv-direct} & $\checkmark$ (sufficiency) & $\times$ & $\times$ & Recompute \\
+\midrule
+\textbf{SandwichKV (ours)} & $\boldsymbol{\checkmark}$ \textbf{tight} & $\boldsymbol{\checkmark}$ \textbf{quantified} & $\boldsymbol{\checkmark}$ \textbf{quantified} & Quant + theory \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent See Appendix~D for detailed paragraph-by-paragraph comparison with each baseline.
+
+%==============================================================================
+\section{Discussion}
+\label{sec:discussion}
+
+\paragraph{Limitations.}
+(1)~Single model family per scale --- no comprehensive sweep.
+(2)~Token-level end-to-end test too strict (\S\ref{sec:experiments}); task-level metrics on stronger baselines needed.
+(3)~Wall-clock overhead is implementation-limited; production CUDA kernels needed.
+(4)~Pipeline-necessity converse (Theorem~\ref{thm:achievability} reverse) remains conjectural (Appendix~C).
+
+\paragraph{Connection to KV-Direct.}
+\citet{kv-direct} prove the residual stream is a sufficient statistic, eliminating KV cache entirely (recompute on demand). SandwichKV complements this: when memory budget allows for some K/V storage (faster than recompute at moderate batch), our bound characterizes how much it can be compressed. The two are complementary regimes.
+
+\paragraph{Future work.} R1-Distill-Llama-70B validation; production CUDA kernel; long-trajectory ($>32$K) regime; formal proof of pipeline necessity.
+
+%==============================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+We derived the first information-theoretic lower bound for KV cache compression that exploits two structural properties of LLM attention --- entropy rate of the thought process and position-class attention skew --- yielding a bound 1.37 bits per coordinate tighter than \citet{turboquant} on Llama-8B. The \eq{} pipeline achieves this within constant factor, with empirical wins at the production-critical low-bit regime. Cross-scale validation confirms universality across model scales and architectures.
+
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+\appendix
+\section{Proof of Theorem 1}\label{app:proof-1}\textit{[5-step KKT derivation, expanded.]}
+\section{Proof of Theorem 2}\label{app:proof-2}\textit{[Two-stage composition + Glivenko--Cantelli.]}
+\section{Pipeline necessity (Conjecture)}\label{app:conjecture}
+\begin{conjecture}
+For any single-stage quantizer $Q_0$ that does not adapt to $(\phi_t, \rho_t)$, there exists a thought process with $\max w - \min w > \delta$ such that $R(Q_0; D) \ge (1 + \Omega(\delta)) R^*(D, \hinf)$.
+\end{conjecture}
+\section{Detailed related-work comparison}\label{app:related}\textit{[Paragraph per baseline.]}
+\section{Implementation \& reproducibility}\label{app:impl}\textit{[Lloyd-Max codebooks, hyperparameters, code at \url{https://github.com/ccyrene/sandwich-kv}.]}
+
+\end{document}

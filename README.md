@@ -142,7 +142,7 @@ See [`experiments/README.md`](experiments/README.md) for a per-script index.
 ```bibtex
 @misc{sandwichkv2026,
   title  = {SandwichKV: Layer-Asymmetric Mixed Precision and Residual Vector Quantization for KV-Cache Compression in Reasoning-Distilled LLMs},
-  author = {Anonymous},
+  author = {Rungrod Thongjampa},
   year   = {2026},
   eprint = {TBD},
   archivePrefix = {arXiv},

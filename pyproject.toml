@@ -9,7 +9,7 @@ description = "Layer-asymmetric mixed precision + residual vector quantization f
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
-authors = [{ name = "Anonymous" }]
+authors = [{ name = "Rungrod Thongjampa" }]
 keywords = ["llm", "kv-cache", "quantization", "compression", "turboquant", "lloyd-max"]
 classifiers = [
     "Programming Language :: Python :: 3",
