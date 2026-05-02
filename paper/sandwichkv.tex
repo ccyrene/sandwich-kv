@@ -7,11 +7,13 @@
 \usepackage{graphicx}
 \usepackage[hidelinks]{hyperref}
 \usepackage[dvipsnames]{xcolor}
-\usepackage{natbib}
+\usepackage[numbers,sort&compress]{natbib}
 \usepackage[capitalize]{cleveref}
 \usepackage{tcolorbox}
 \usepackage{caption}
-\captionsetup{font=small, labelfont=bf}
+\captionsetup{font=small, labelfont=bf, skip=4pt}
+\setlength{\textfloatsep}{10pt plus 2pt minus 2pt}
+\setlength{\intextsep}{10pt plus 2pt minus 2pt}
 
 \newtheorem{theorem}{Theorem}
 \newtheorem{conjecture}{Conjecture}
@@ -33,19 +35,17 @@
 \newtcolorbox{tldr}{colback=yellow!8, colframe=orange!70!black, sharp corners, boxrule=1pt, left=8pt, right=8pt, top=6pt, bottom=6pt}
 \newtcolorbox{result}{colback=green!5, colframe=green!50!black, sharp corners, boxrule=1pt, left=8pt, right=8pt, top=6pt, bottom=6pt}
 
-\title{\textbf{SandwichKV: Layer-Asymmetric Mixed Precision and\\
-       Residual Vector Quantization for KV-Cache Compression\\
-       in Reasoning-Distilled LLMs}}
-\author{Rungrod Thongjampa}
+\title{\textbf{SandwichKV: Layer-Asymmetric Mixed Precision and Residual Vector Quantization for KV-Cache Compression in Reasoning-Distilled LLMs}}
+\author{Rungrod Thongjampa\thanks{Independent researcher.}}
 \date{}
 
 \begin{document}
 \maketitle
-\vspace{-1em}
+\vspace{-0.5em}
 
 %==============================================================================
 \begin{tldr}
-\textbf{TL;DR.} We propose \eq{}, a calibration-free K-cache compression pipeline that builds on TurboQuant's random-rotation Lloyd--Max primitive~\citep{turboquant} with two structural levers: (i) \emph{sandwich layer-precision allocation} (outer layers at $b{=}4$, middle layers at lower precision) and (ii) \emph{multi-pass Residual VQ} in the middle layers with per-batch standard-deviation scaling. On joint K+V quantization at 4 bits/coord (3.88$\times$ compression vs FP16, identical memory to TurboQuant uniform $b{=}4$): $\boldsymbol{\Delta\text{ppl}=-0.84}$ on R1-Distill-Llama-8B (matches FP16); +0.13 on Llama-2-7B-Chat, +0.05 on Mistral-7B-Instruct (TurboQuant equivalent within noise); +0.40 on Llama-3.1-8B-Instruct (TurboQuant wins by +0.24 ppl). The advantage of \eq{} over uniform Lloyd--Max correlates with the model's per-layer sensitivity profile: \textbf{the boundary-to-middle lift ratio is the determining factor}. Models with $\text{ratio} > 100$ (e.g., R1-Distill, ratio $=786$) gain dramatically from sandwich allocation; models with $\text{ratio} < 5$ (e.g., Llama-3.1, ratio $=2.7$) are already near-optimal under uniform allocation. We provide a single calibration pass that computes this ratio and selects between \eq{} and TurboQuant. We additionally derive an information-theoretic lower bound 1.37 bits/coord tighter than TurboQuant's universal bound, and the inner-product variant \eqp{} reduces per-pair attention reconstruction error by $35\%$ at $b{=}1$ on R1-Distill-Qwen-1.5B.
+\textbf{TL;DR.} We propose \eq{}, a calibration-free KV-cache compression pipeline that builds on TurboQuant's random-rotation Lloyd--Max primitive~\citep{turboquant} with two structural levers: (i) \emph{sandwich layer-precision allocation} (outer layers at $b{=}4$, middle layers at lower precision) and (ii) \emph{multi-pass Residual VQ} in the middle layers with per-batch standard-deviation scaling. On joint K+V quantization at 4 bits/coord (3.88$\times$ compression vs FP16, identical memory to TurboQuant uniform $b{=}4$): $\boldsymbol{\Delta\text{ppl}=-0.84}$ on R1-Distill-Llama-8B (matches FP16); +0.13 on Llama-2-7B-Chat, +0.05 on Mistral-7B-Instruct (TurboQuant equivalent within noise); +0.40 on Llama-3.1-8B-Instruct (TurboQuant wins by +0.24 ppl). The advantage of \eq{} over uniform Lloyd--Max correlates with the model's per-layer sensitivity profile: \textbf{the boundary-to-middle lift ratio is the determining factor}. Models with $\text{ratio} > 100$ (e.g., R1-Distill, ratio $=786$) gain dramatically from sandwich allocation; models with $\text{ratio} < 5$ (e.g., Llama-3.1, ratio $=2.7$) are already near-optimal under uniform allocation. We provide a single calibration pass that computes this ratio and selects between \eq{} and TurboQuant. We additionally derive an information-theoretic lower bound 1.37 bits/coord tighter than TurboQuant's universal bound, and the inner-product variant \eqp{} reduces per-pair attention reconstruction error by $35\%$ at $b{=}1$ on R1-Distill-Qwen-1.5B.
 \end{tldr}
 
 %==============================================================================
@@ -62,7 +62,7 @@ We instantiate the bound via a 4-stage online pipeline (\eq) that achieves it wi
 \begin{figure}[t]
 \centering
 \includegraphics[width=\textwidth]{figures/fig_hero.pdf}
-\caption{\textbf{Where SandwichKV wins.} \emph{Left:} our information-theoretic bound is 1.37 bits per coordinate tighter than TurboQuant's universal bound, decomposed into the entropy-rate lever (0.40 bit) and the position-aware sink lever (0.96 bit on Llama-8B). Empirical methods (ThinKV, KVTC) lack a formal bound. \emph{Right:} on real R1-Distill-Qwen-1.5B (q,k) pairs at the most aggressive compression ($b{=}1$), the unbiased \eqp{} variant cuts attention reconstruction error by 35\% over uniform TurboQuant.}
+\caption{\textbf{Where SandwichKV wins.} \emph{Left:} joint K+V quantization at 4 bits/coord across four Llama-family models on WikiText-2 ($\Delta\text{ppl}$ vs FP16). On R1-Distill-Llama-8B (boundary-to-middle sensitivity ratio $=786$), \eq{} achieves $\Delta\text{ppl}=-0.54$ versus TurboQuant's $+0.69$. On Mistral-7B and Llama-3.1-8B (ratios $\le 10$), TurboQuant uniform Lloyd--Max is equal-or-better. \emph{Right:} the per-layer sensitivity profile of R1-Distill-Llama-8B (leave-one-out, each layer at $b{=}4$ with rest at $b{=}2$) — boundary layers contribute $\sim 8$ ppl of recoverable lift while middle layers are saturated, validating the sandwich allocation.}
 \label{fig:hero}
 \end{figure}
 
@@ -129,7 +129,7 @@ $\rho_t \in \{\sink, \body, \recent\}$ formalizes attention sink \citep{streamin
 \paragraph{Per-class attention weight.}
 $w(\phi, \rho)$ is the expected future attention weight on a token of joint class $(\phi, \rho)$, normalized so $\sum_{\phi,\rho} \pi(\phi,\rho) w(\phi,\rho) = 1$. Empirically (\Cref{tab:w-table}), the SINK position dominates: $w(\sink, c_0) \approx 18.7$ on Llama-8B, while BODY positions get $w \approx 0.13$.
 
-\begin{table}[h]
+\begin{table}[t]
 \centering
 \caption{Empirical $w(\phi, \rho)$ on R1-Distill-Llama-8B. \textbf{Sinks dominate.} (Source: \texttt{llama8b\_validation.json})}
 \label{tab:w-table}
@@ -222,18 +222,18 @@ For unit-norm query $y$, \eqp{} satisfies $\E[\langle y, \tilde k\rangle] = \lan
 \section{Empirical Validation}
 \label{sec:experiments}
 
-\subsection{Cross-scale: theory holds, even tighter on larger model}
+\subsection{Per-layer sensitivity across the Llama family}
 
-\begin{figure}[h]
+\begin{figure}[!t]
 \centering
-\includegraphics[width=0.85\textwidth]{figures/fig_cross_scale.pdf}
-\caption{\textbf{Cross-scale validation.} The position-aware lever is even larger on Llama-8B (0.96 vs 0.58 bits/coord) --- meaning the bound becomes \emph{tighter} as model size grows, an unusual property in compression theory.}
-\label{fig:cross-scale}
+\includegraphics[width=\textwidth]{figures/fig_sensitivity.pdf}
+\caption{\textbf{Per-layer sensitivity profile across four Llama-family models.} Each bar reports the perplexity lift when layer $L$ is upgraded from $b{=}2$ to $b{=}4$ (K and V) while all other layers remain at $b{=}2$ — a leave-one-out probe of where quantization error concentrates. Shaded regions mark the sandwich-outer band (first/last 8 layers). The boundary-to-middle ratio decisively predicts whether \eq{} beats uniform Lloyd--Max: R1-Distill-Llama-8B shows extreme boundary dominance (ratio $=786$), Llama-2-7B-Chat and Mistral-7B are moderately boundary-dominant (ratios $14$ and $8.4$), and Llama-3.1-8B-Instruct is flat (ratio $=2.7$) — explaining why Llama-3.1 is the one model where TurboQuant uniform wins.}
+\label{fig:sensitivity}
 \end{figure}
 
 \Cref{tab:cross-scale} summarizes: every assumption of \Cref{thm:lower-bound} is validated cross-model. The combined tightening grows from 0.98 bits/coord (Qwen-1.5B) to \textbf{1.37 bits/coord (Llama-8B)}, equivalent to \textbf{22 MB saved per 32K-context query}.
 
-\begin{table}[h]
+\begin{table}[t]
 \centering
 \caption{Cross-scale validation. \textbf{All theoretical assumptions hold; tightening is larger on Llama-8B.}}
 \label{tab:cross-scale}
@@ -258,7 +258,7 @@ Position-aware lever (bits/coord) & $-0.575$ & $\boldsymbol{-0.962}$ \\
 
 We measure mean attention reconstruction error $|\langle q, k\rangle - \langle q, \tilde k\rangle|$ on \emph{real} (q, k) pairs extracted from R1-Distill-Qwen-1.5B forward passes (not random vectors), at \emph{matched} memory budget across methods. All methods use real Lloyd--Max codebooks.
 
-\begin{table}[h]
+\begin{table}[t]
 \centering
 \caption{Mean attention reconstruction error per bit-width on R1-Distill-Qwen-1.5B. \textbf{Bold = best per row.} \eqp{} dominates at $b{=}1$ (extreme low-bit) by $-35\%$.}
 \label{tab:per-pair}
@@ -266,8 +266,8 @@ We measure mean attention reconstruction error $|\langle q, k\rangle - \langle q
 \toprule
 \textbf{$b$} & Uniform TurboQuant & ThinKV & \eq{} (MSE) & \eqp{} \\
 \midrule
-\textbf{1} & 21.6 & 17.6 & 21.6 & $\boldsymbol{13.9}$ \;\;($\boldsymbol{-35\%}$) \\
-\textbf{2} & 8.9 & 10.9 & $\boldsymbol{8.0}$ \;\;($-10\%$) & 12.5 \\
+\textbf{1} & 21.6 & 17.6 & 21.6 & $\boldsymbol{13.9}$ \\
+\textbf{2} & 8.9  & 10.9 & $\boldsymbol{8.0}$ & 12.5 \\
 3 & $\boldsymbol{4.2}$ & 4.9 & 6.0 & 10.3 \\
 4 & $\boldsymbol{1.5}$ & 2.7 & 3.3 & 5.4 \\
 \bottomrule
@@ -301,7 +301,7 @@ per-layer random orthogonal rotation followed by Lloyd--Max scalar
 quantization, identical to TurboQuant. The FP16 baseline ppl is
 $34.7334$.
 
-\begin{table}[h]
+\begin{table}[t]
 \centering
 \caption{Joint K+V quantization on WikiText-2 across Llama-family models (TRUE bit budgets, calibration-free, K=V symmetric). All entries report $\Delta\text{ppl}$ vs the model's FP16 baseline. \textbf{Bold = better between TQ and \eq{} at matched memory.} The rightmost column reports the boundary-to-middle sensitivity ratio (Section~\ref{sec:profile}), which determines which method is preferred.}
 \label{tab:sandwich-multimodel}
@@ -326,7 +326,7 @@ Llama-3.1-8B-Instruct & 10.10 & $+0.71$  & $\boldsymbol{+0.16}$ & $+1.67$ & $+0.
 
 To explain the wide gap in $\eq{}$'s effectiveness across models in Table~\ref{tab:sandwich-multimodel} we performed a leave-one-out sensitivity profile on each model: with all $32$ layers' K and V at $b{=}2$, we restore exactly one layer~$\ell$ to $b{=}4$ and measure the resulting drop in perplexity ($\text{lift}_\ell$). Table~\ref{tab:sensitivity} reports the maximum boundary-layer lift, the mean middle-layer lift, and their ratio.
 
-\begin{table}[h]
+\begin{table}[t]
 \centering
 \caption{Per-layer sensitivity profiles via leave-one-out at $b{=}2$ K=V. Boundary lift is $\max(\text{lift}_0,\,\text{lift}_1)$. Middle lift is averaged over layers $[L/4, 3L/4)$. Boundary-dominant means a small number of early layers are responsible for most quantization error; flat means error compounds approximately uniformly.}
 \label{tab:sensitivity}
@@ -486,7 +486,7 @@ this model. Full results: \texttt{data/perplexity\_iter\{5,6\}*.json}.
 \section{Related Work}
 \label{sec:related}
 
-\begin{table}[h]
+\begin{table}[t]
 \centering
 \caption{\textbf{Where SandwichKV sits in the literature.} Only SandwichKV has both (a) a tight theoretical bound and (b) explicit exploitation of the well-known LLM-attention structure (sinks, thought predictability).}
 \label{tab:related}
@@ -529,7 +529,7 @@ KV-Direct \citep{kv-direct} & $\checkmark$ (sufficiency) & $\times$ & $\times$ &
 \label{sec:conclusion}
 We derived the first information-theoretic lower bound for KV cache compression that exploits two structural properties of LLM attention --- entropy rate of the thought process and position-class attention skew --- yielding a bound 1.37 bits per coordinate tighter than \citet{turboquant} on Llama-8B. The \eq{} pipeline achieves this within constant factor, with empirical wins at the production-critical low-bit regime. Cross-scale validation confirms universality across model scales and architectures.
 
-\bibliographystyle{plainnat}
+\bibliographystyle{unsrtnat}
 \bibliography{references}
 
 \appendix
