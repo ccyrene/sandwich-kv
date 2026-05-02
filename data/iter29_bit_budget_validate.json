@@ -1,0 +1,98 @@
+{
+  "FP16": {
+    "true_bits": 16.0,
+    "ppl": 34.733377782491715,
+    "delta_ppl": 0.0,
+    "prefill_ms": 256.4918070100248,
+    "decode_ms_per_tok": 34.25402310434341,
+    "mem_bytes_per_token_K": 65536.0
+  },
+  "TurboQuant_uniform_b2": {
+    "true_bits": 2.0,
+    "ppl": 52.26258838135388,
+    "delta_ppl": 17.529210598862164,
+    "prefill_ms": 258.83868164382875,
+    "decode_ms_per_tok": 40.472814958775416,
+    "mem_bytes_per_token_K": 8704.0
+  },
+  "TurboQuant_uniform_b3": {
+    "true_bits": 3.0,
+    "ppl": 38.07233497814061,
+    "delta_ppl": 3.338957195648895,
+    "prefill_ms": 260.9285735525191,
+    "decode_ms_per_tok": 41.46888706357762,
+    "mem_bytes_per_token_K": 12800.0
+  },
+  "TurboQuant_uniform_b4": {
+    "true_bits": 4.0,
+    "ppl": 34.92637818082968,
+    "delta_ppl": 0.1930003983379649,
+    "prefill_ms": 261.56547092832625,
+    "decode_ms_per_tok": 41.78798333305167,
+    "mem_bytes_per_token_K": 16896.0
+  },
+  "sand_8-8 (no RVQ)": {
+    "true_bits": 3.0,
+    "ppl": 36.246336336214156,
+    "delta_ppl": 1.5129585537224415,
+    "prefill_ms": 263.6142635717988,
+    "decode_ms_per_tok": 41.01135480353454,
+    "mem_bytes_per_token_K": 12800.0
+  },
+  "sand_8-8 + RVQ_b2+b1 middle (TRUE 3.5bit)": {
+    "true_bits": 3.5,
+    "ppl": 35.15268651513828,
+    "delta_ppl": 0.419308732646563,
+    "prefill_ms": 265.2186939958483,
+    "decode_ms_per_tok": 42.992073780624196,
+    "mem_bytes_per_token_K": 14848.0
+  },
+  "sand_8-8 + RVQ_b2+b1_diffR (TRUE 3.5bit)": {
+    "true_bits": 3.5,
+    "ppl": 35.018725431699586,
+    "delta_ppl": 0.28534764920787126,
+    "prefill_ms": 267.4246579874307,
+    "decode_ms_per_tok": 44.590017986289844,
+    "mem_bytes_per_token_K": 14848.0
+  },
+  "sand+RVQ_b2+b1+recent256_b4 (TRUE ~3.52bit)": {
+    "true_bits": 3.7133333333333334,
+    "ppl": 34.88460115722307,
+    "delta_ppl": 0.1512233747313516,
+    "prefill_ms": 268.45006737858057,
+    "decode_ms_per_tok": 46.38247411154831,
+    "mem_bytes_per_token_K": 15721.813333333334
+  },
+  "sand_8-8 + RVQ_b2+b1+b1 middle (TRUE 4.0bit)": {
+    "true_bits": 4.0,
+    "ppl": 34.86456954143475,
+    "delta_ppl": 0.13119175894303226,
+    "prefill_ms": 268.7879899982363,
+    "decode_ms_per_tok": 45.25964976104054,
+    "mem_bytes_per_token_K": 16896.0
+  },
+  "sand_12-12 + RVQ_b2+b1 (TRUE 3.75bit)": {
+    "true_bits": 3.75,
+    "ppl": 34.7550133256368,
+    "delta_ppl": 0.021635543145087865,
+    "prefill_ms": 267.1308338176459,
+    "decode_ms_per_tok": 43.02462174625058,
+    "mem_bytes_per_token_K": 15872.0
+  },
+  "sand_8-8 + RVQ_b1+b1 middle (TRUE 3.0bit)": {
+    "true_bits": 3.0,
+    "ppl": 36.285716791649754,
+    "delta_ppl": 1.5523390091580396,
+    "prefill_ms": 268.04584842175245,
+    "decode_ms_per_tok": 45.58223274701353,
+    "mem_bytes_per_token_K": 12800.0
+  },
+  "sand_8-8 + RVQ_b1+b1_diffR (TRUE 3.0bit)": {
+    "true_bits": 3.0,
+    "ppl": 37.77136611758508,
+    "delta_ppl": 3.0379883350933667,
+    "prefill_ms": 269.5799209177494,
+    "decode_ms_per_tok": 47.071901416832894,
+    "mem_bytes_per_token_K": 12800.0
+  }
+}

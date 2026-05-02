@@ -1,0 +1,131 @@
+{
+  "R1-Distill-Llama-8B": {
+    "FP16_PPL": 34.733377782491715,
+    "n_layers": 32,
+    "head_dim": 128,
+    "sandwich_shape": "8-8",
+    "FP16": {
+      "K_bits": 16.0,
+      "V_bits": 16.0,
+      "ppl": 34.733377782491715,
+      "delta_ppl": 0.0
+    },
+    "TQ_K=V=b3": {
+      "K_bits": 3.0,
+      "V_bits": 3.0,
+      "ppl": 38.80278293199712,
+      "delta_ppl": 4.069405149505407
+    },
+    "TQ_K=V=b4": {
+      "K_bits": 4.0,
+      "V_bits": 4.0,
+      "ppl": 34.788544572861134,
+      "delta_ppl": 0.055166790369419516
+    },
+    "Sand_K=V_3.0": {
+      "K_bits": 3.0,
+      "V_bits": 3.0,
+      "ppl": 35.18693000916281,
+      "delta_ppl": 0.45355222667109274
+    },
+    "Sand+RVQ_K=V_3.5": {
+      "K_bits": 3.5,
+      "V_bits": 3.5,
+      "ppl": 34.457223895903596,
+      "delta_ppl": -0.27615388658811924
+    },
+    "Sand+RVQ_K=V_4.0": {
+      "K_bits": 4.0,
+      "V_bits": 4.0,
+      "ppl": 33.89091104773667,
+      "delta_ppl": -0.8424667347550425
+    }
+  },
+  "Llama-3.1-8B-Instruct": {
+    "error": "You are trying to access a gated repo.\nMake sure to have access to it at https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct.\n401 Client Error. (Request ID: Root=1-69f64bf5-22858cae596ebfe740e13217;2a3deb81-fa68-4286-85c6-86146e158524)\n\nCannot access gated repo for url https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct/resolve/main/config.json.\nAccess to model meta-llama/Llama-3.1-8B-Instruct is restricted. You must have access to it and be authenticated to access it. Please log in."
+  },
+  "Qwen-2.5-7B-Instruct": {
+    "FP16_PPL": 9.124121721745112,
+    "n_layers": 28,
+    "head_dim": 128,
+    "sandwich_shape": "7-7",
+    "FP16": {
+      "K_bits": 16.0,
+      "V_bits": 16.0,
+      "ppl": 9.124121721745112,
+      "delta_ppl": 0.0
+    },
+    "TQ_K=V=b3": {
+      "K_bits": 3.0,
+      "V_bits": 3.0,
+      "ppl": 12966.988669729177,
+      "delta_ppl": 12957.864548007432
+    },
+    "TQ_K=V=b4": {
+      "K_bits": 4.0,
+      "V_bits": 4.0,
+      "ppl": 18107.73499072661,
+      "delta_ppl": 18098.610869004864
+    },
+    "Sand_K=V_3.0": {
+      "K_bits": 3.0,
+      "V_bits": 3.0,
+      "ppl": 20268.538506695375,
+      "delta_ppl": 20259.41438497363
+    },
+    "Sand+RVQ_K=V_3.5": {
+      "K_bits": 3.5,
+      "V_bits": 3.5,
+      "ppl": 18660.171377551687,
+      "delta_ppl": 18651.04725582994
+    },
+    "Sand+RVQ_K=V_4.0": {
+      "K_bits": 4.0,
+      "V_bits": 4.0,
+      "ppl": 19553.05604451538,
+      "delta_ppl": 19543.931922793632
+    }
+  },
+  "R1-Distill-Qwen-1.5B": {
+    "FP16_PPL": 548.4754367419773,
+    "n_layers": 28,
+    "head_dim": 128,
+    "sandwich_shape": "7-7",
+    "FP16": {
+      "K_bits": 16.0,
+      "V_bits": 16.0,
+      "ppl": 548.4754367419773,
+      "delta_ppl": 0.0
+    },
+    "TQ_K=V=b3": {
+      "K_bits": 3.0,
+      "V_bits": 3.0,
+      "ppl": 44288.29406375039,
+      "delta_ppl": 43739.81862700841
+    },
+    "TQ_K=V=b4": {
+      "K_bits": 4.0,
+      "V_bits": 4.0,
+      "ppl": 28594.699070282684,
+      "delta_ppl": 28046.223633540707
+    },
+    "Sand_K=V_3.0": {
+      "K_bits": 3.0,
+      "V_bits": 3.0,
+      "ppl": 29094.71694444599,
+      "delta_ppl": 28546.241507704013
+    },
+    "Sand+RVQ_K=V_3.5": {
+      "K_bits": 3.5,
+      "V_bits": 3.5,
+      "ppl": 25898.547475894775,
+      "delta_ppl": 25350.072039152798
+    },
+    "Sand+RVQ_K=V_4.0": {
+      "K_bits": 4.0,
+      "V_bits": 4.0,
+      "ppl": 27405.19570058453,
+      "delta_ppl": 26856.72026384255
+    }
+  }
+}

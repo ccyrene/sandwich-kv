@@ -1,0 +1,156 @@
+{
+  "01_FP16_baseline (no quant)": {
+    "K_bits": 16.0,
+    "V_bits": 16.0,
+    "K_bytes_per_tok": 65536.0,
+    "V_bytes_per_tok": 65536.0,
+    "total_KV_bytes": 131072.0,
+    "avg_bits_KV": 16.0,
+    "ppl": 34.733377782491715,
+    "delta_ppl": 0.0,
+    "time_s": 1.5813062191009521
+  },
+  "02_K=V=uniform_b3 (TurboQuant)": {
+    "K_bits": 3.0,
+    "V_bits": 3.0,
+    "K_bytes_per_tok": 12800.0,
+    "V_bytes_per_tok": 12800.0,
+    "total_KV_bytes": 25600.0,
+    "avg_bits_KV": 3.0,
+    "ppl": 38.80278293199712,
+    "delta_ppl": 4.069405149505407,
+    "time_s": 1.7606573104858398
+  },
+  "03_K=V=uniform_b4 (TurboQuant)": {
+    "K_bits": 4.0,
+    "V_bits": 4.0,
+    "K_bytes_per_tok": 16896.0,
+    "V_bytes_per_tok": 16896.0,
+    "total_KV_bytes": 33792.0,
+    "avg_bits_KV": 4.0,
+    "ppl": 34.788544572861134,
+    "delta_ppl": 0.055166790369419516,
+    "time_s": 1.630739688873291
+  },
+  "04_K=sand_8-8_b4_b2 / V=FP16": {
+    "K_bits": 3.0,
+    "V_bits": 16.0,
+    "K_bytes_per_tok": 12800.0,
+    "V_bytes_per_tok": 65536.0,
+    "total_KV_bytes": 78336.0,
+    "avg_bits_KV": 9.5,
+    "ppl": 36.246336336214156,
+    "delta_ppl": 1.5129585537224415,
+    "time_s": 1.6021571159362793
+  },
+  "05_K=sand+RVQ_d4 / V=FP16": {
+    "K_bits": 4.0,
+    "V_bits": 16.0,
+    "K_bytes_per_tok": 16896.0,
+    "V_bytes_per_tok": 65536.0,
+    "total_KV_bytes": 82432.0,
+    "avg_bits_KV": 10.0,
+    "ppl": 34.571915660270115,
+    "delta_ppl": -0.16146212222160017,
+    "time_s": 1.6805641651153564
+  },
+  "06_K=V=sand_8-8 (no RVQ) [3.0 each]": {
+    "K_bits": 3.0,
+    "V_bits": 3.0,
+    "K_bytes_per_tok": 12800.0,
+    "V_bytes_per_tok": 12800.0,
+    "total_KV_bytes": 25600.0,
+    "avg_bits_KV": 3.0,
+    "ppl": 35.18693000916281,
+    "delta_ppl": 0.45355222667109274,
+    "time_s": 1.6166961193084717
+  },
+  "07_K=V=sand+RVQ_depth3 [3.5 each]": {
+    "K_bits": 3.5,
+    "V_bits": 3.5,
+    "K_bytes_per_tok": 14848.0,
+    "V_bytes_per_tok": 14848.0,
+    "total_KV_bytes": 29696.0,
+    "avg_bits_KV": 3.5,
+    "ppl": 34.457223895903596,
+    "delta_ppl": -0.27615388658811924,
+    "time_s": 1.643728494644165
+  },
+  "08_K=V=sand+RVQ_depth4 [4.0 each]": {
+    "K_bits": 4.0,
+    "V_bits": 4.0,
+    "K_bytes_per_tok": 16896.0,
+    "V_bytes_per_tok": 16896.0,
+    "total_KV_bytes": 33792.0,
+    "avg_bits_KV": 4.0,
+    "ppl": 33.89091104773667,
+    "delta_ppl": -0.8424667347550425,
+    "time_s": 1.6747241020202637
+  },
+  "09_K=sand+RVQ_d4 / V=uniform_b4": {
+    "K_bits": 4.0,
+    "V_bits": 4.0,
+    "K_bytes_per_tok": 16896.0,
+    "V_bytes_per_tok": 16896.0,
+    "total_KV_bytes": 33792.0,
+    "avg_bits_KV": 4.0,
+    "ppl": 34.48981547403966,
+    "delta_ppl": -0.24356230845205573,
+    "time_s": 1.6482350826263428
+  },
+  "10_K=sand+RVQ_d4 / V=uniform_b3": {
+    "K_bits": 4.0,
+    "V_bits": 3.0,
+    "K_bytes_per_tok": 16896.0,
+    "V_bytes_per_tok": 12800.0,
+    "total_KV_bytes": 29696.0,
+    "avg_bits_KV": 3.5,
+    "ppl": 34.759115256923664,
+    "delta_ppl": 0.02573747443194918,
+    "time_s": 1.642218828201294
+  },
+  "11_K=sand+RVQ_d3 / V=uniform_b3": {
+    "K_bits": 3.5,
+    "V_bits": 3.0,
+    "K_bytes_per_tok": 14848.0,
+    "V_bytes_per_tok": 12800.0,
+    "total_KV_bytes": 27648.0,
+    "avg_bits_KV": 3.25,
+    "ppl": 34.95834109461201,
+    "delta_ppl": 0.22496331212029475,
+    "time_s": 1.6423025131225586
+  },
+  "12_K=sand_8-8 / V=uniform_b3": {
+    "K_bits": 3.0,
+    "V_bits": 3.0,
+    "K_bytes_per_tok": 12800.0,
+    "V_bytes_per_tok": 12800.0,
+    "total_KV_bytes": 25600.0,
+    "avg_bits_KV": 3.0,
+    "ppl": 36.26158223658577,
+    "delta_ppl": 1.5282044540940518,
+    "time_s": 1.6568615436553955
+  },
+  "13_K=sand_8-8 / V=uniform_b4": {
+    "K_bits": 3.0,
+    "V_bits": 4.0,
+    "K_bytes_per_tok": 12800.0,
+    "V_bytes_per_tok": 16896.0,
+    "total_KV_bytes": 29696.0,
+    "avg_bits_KV": 3.5,
+    "ppl": 35.86452589228335,
+    "delta_ppl": 1.1311481097916385,
+    "time_s": 1.6565520763397217
+  },
+  "14_K=V=uniform_b4 + RVQ_d4 K-side only": {
+    "K_bits": 4.0,
+    "V_bits": 4.0,
+    "K_bytes_per_tok": 16896.0,
+    "V_bytes_per_tok": 16896.0,
+    "total_KV_bytes": 33792.0,
+    "avg_bits_KV": 4.0,
+    "ppl": 34.48981547403966,
+    "delta_ppl": -0.24356230845205573,
+    "time_s": 1.6531381607055664
+  }
+}

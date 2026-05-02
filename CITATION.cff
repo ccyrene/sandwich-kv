@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use SandwichKV in your research, please cite the arXiv tech report."
+title: "SandwichKV: Layer-Asymmetric Mixed Precision and Residual Vector Quantization for KV-Cache Compression in Reasoning-Distilled LLMs"
+authors:
+  - family-names: Anonymous
+    given-names: Anonymous
+version: 0.1.0
+date-released: 2026-05-03
+license: Apache-2.0
+type: software
+repository-code: "https://github.com/ccyrene/sandwich-kv"
+preferred-citation:
+  type: article
+  title: "SandwichKV: Layer-Asymmetric Mixed Precision and Residual Vector Quantization for KV-Cache Compression in Reasoning-Distilled LLMs"
+  authors:
+    - family-names: Anonymous
+      given-names: Anonymous
+  year: 2026
+  journal: "arXiv preprint"
+  url: "https://arxiv.org/abs/TBD"

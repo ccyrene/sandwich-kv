@@ -1,0 +1,167 @@
+{
+  "R1-Distill-Llama-8B": {
+    "FP16_PPL": 34.733377782491715,
+    "n_layers": 32,
+    "head_dim": 128,
+    "FP16": {
+      "ppl": 34.733377782491715,
+      "delta_ppl": 0.0,
+      "class": "ref"
+    },
+    "TQ_K=V=b3": {
+      "ppl": 38.80278293199712,
+      "delta_ppl": 4.069405149505407,
+      "class": "TQ"
+    },
+    "TQ_K=V=b4": {
+      "ppl": 34.788544572861134,
+      "delta_ppl": 0.055166790369419516,
+      "class": "TQ"
+    },
+    "Univ_v1_base2_sink4_rec256_b4": {
+      "ppl": 50.38810127884464,
+      "delta_ppl": 15.654723496352922,
+      "class": "ours"
+    },
+    "Univ_v1_base3_sink4_rec256_b4": {
+      "ppl": 37.57207600604952,
+      "delta_ppl": 2.838698223557806,
+      "class": "ours"
+    },
+    "Univ_v1_base4_sink4_rec256_b4": {
+      "ppl": 35.156507086328595,
+      "delta_ppl": 0.4231293038368804,
+      "class": "ours"
+    },
+    "Univ_v2_base2_sink4_rec256_b4_outlier1": {
+      "ppl": 49.38716185012881,
+      "delta_ppl": 14.653784067637098,
+      "class": "ours"
+    },
+    "Univ_v2_base3_sink4_rec256_b4_outlier1": {
+      "ppl": 37.116856154791655,
+      "delta_ppl": 2.3834783722999404,
+      "class": "ours"
+    },
+    "Univ_v1_base2_sink4_rec64_b4": {
+      "ppl": 53.475916694618206,
+      "delta_ppl": 18.74253891212649,
+      "class": "ours"
+    },
+    "Univ_v1_base2_sink4_rec256_b3": {
+      "ppl": 51.34540388583624,
+      "delta_ppl": 16.612026103344526,
+      "class": "ours"
+    }
+  },
+  "Mistral-7B-v0.3": {
+    "FP16_PPL": 7.65950851798317,
+    "n_layers": 32,
+    "head_dim": 128,
+    "FP16": {
+      "ppl": 7.65950851798317,
+      "delta_ppl": 0.0,
+      "class": "ref"
+    },
+    "TQ_K=V=b3": {
+      "ppl": 7.8875827249953945,
+      "delta_ppl": 0.22807420701222458,
+      "class": "TQ"
+    },
+    "TQ_K=V=b4": {
+      "ppl": 7.713570249449562,
+      "delta_ppl": 0.05406173146639226,
+      "class": "TQ"
+    },
+    "Univ_v1_base2_sink4_rec256_b4": {
+      "ppl": 9.448159175262749,
+      "delta_ppl": 1.7886506572795788,
+      "class": "ours"
+    },
+    "Univ_v1_base3_sink4_rec256_b4": {
+      "ppl": 7.852228473278567,
+      "delta_ppl": 0.19271995529539687,
+      "class": "ours"
+    },
+    "Univ_v1_base4_sink4_rec256_b4": {
+      "ppl": 7.719761317627789,
+      "delta_ppl": 0.06025279964461916,
+      "class": "ours"
+    },
+    "Univ_v2_base2_sink4_rec256_b4_outlier1": {
+      "ppl": 9.429758596075517,
+      "delta_ppl": 1.7702500780923476,
+      "class": "ours"
+    },
+    "Univ_v2_base3_sink4_rec256_b4_outlier1": {
+      "ppl": 7.876106898702856,
+      "delta_ppl": 0.2165983807196863,
+      "class": "ours"
+    },
+    "Univ_v1_base2_sink4_rec64_b4": {
+      "ppl": 9.657930679316893,
+      "delta_ppl": 1.998422161333723,
+      "class": "ours"
+    },
+    "Univ_v1_base2_sink4_rec256_b3": {
+      "ppl": 9.486688375372967,
+      "delta_ppl": 1.8271798573897975,
+      "class": "ours"
+    }
+  },
+  "Llama-3-8B-Instruct": {
+    "FP16_PPL": 11.793981259846495,
+    "n_layers": 32,
+    "head_dim": 128,
+    "FP16": {
+      "ppl": 11.793981259846495,
+      "delta_ppl": 0.0,
+      "class": "ref"
+    },
+    "TQ_K=V=b3": {
+      "ppl": 12.233932366360198,
+      "delta_ppl": 0.4399511065137034,
+      "class": "TQ"
+    },
+    "TQ_K=V=b4": {
+      "ppl": 11.95358696746399,
+      "delta_ppl": 0.15960570761749437,
+      "class": "TQ"
+    },
+    "Univ_v1_base2_sink4_rec256_b4": {
+      "ppl": 14.035162944032788,
+      "delta_ppl": 2.2411816841862926,
+      "class": "ours"
+    },
+    "Univ_v1_base3_sink4_rec256_b4": {
+      "ppl": 12.150295062011462,
+      "delta_ppl": 0.35631380216496744,
+      "class": "ours"
+    },
+    "Univ_v1_base4_sink4_rec256_b4": {
+      "ppl": 11.890888569700225,
+      "delta_ppl": 0.09690730985373008,
+      "class": "ours"
+    },
+    "Univ_v2_base2_sink4_rec256_b4_outlier1": {
+      "ppl": 13.91939370856763,
+      "delta_ppl": 2.1254124487211357,
+      "class": "ours"
+    },
+    "Univ_v2_base3_sink4_rec256_b4_outlier1": {
+      "ppl": 12.132220067500953,
+      "delta_ppl": 0.3382388076544576,
+      "class": "ours"
+    },
+    "Univ_v1_base2_sink4_rec64_b4": {
+      "ppl": 14.573304130805393,
+      "delta_ppl": 2.7793228709588984,
+      "class": "ours"
+    },
+    "Univ_v1_base2_sink4_rec256_b3": {
+      "ppl": 14.142574142444019,
+      "delta_ppl": 2.348592882597524,
+      "class": "ours"
+    }
+  }
+}

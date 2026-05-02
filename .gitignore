@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+build/
+dist/
+.eggs/
+.pytest_cache/
+.ruff_cache/
+.coverage
+.tox/
+
+# venv
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Generated artifacts (keep schemas, not bulk outputs)
+codebooks/
+results/
+*.pt
+*.bin
+wandb/
+
+# HF cache
+.cache/
+hf_cache/
+
+# Notebook checkpoints
+.ipynb_checkpoints/
